@@ -115,3 +115,104 @@ INSERT INTO role_permissions (role_id,permission_id) VALUES
 (SELECT id FROM roles WHERE nom='user',SELECT id FROM permission WHERE nom = 'read_posts' || nom='write_posts');
 
 -- TASK 6
+
+CREATE OR REPLACE FUNCTION utilisateur_a_permission(
+    p_utilisateur_id INT,
+    p_ressource VARCHAR,
+    p_action VARCHAR
+)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1
+        FROM utilisateurs u
+        INNER JOIN utilisateur_roles ur ON u.id = ur.utilisateur_id
+        INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+        INNER JOIN permissions p ON rp.permission_id = p.id
+        WHERE u.id = p_utilisateur_id
+          AND u.actif = TRUE
+          AND p.ressource = p_ressource
+          AND p.action = p_action
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION est_token_valide(p_token VARCHAR)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1
+        FROM sessions s
+        INNER JOIN utilisateurs u ON s.utilisateur_id = u.id
+        WHERE s.token = p_token
+          AND s.actif = TRUE
+          AND s.date_expiration > CURRENT_TIMESTAMP
+          AND u.actif = TRUE
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- TASK 7
+
+SELECT
+    u.id,
+    u.email,
+    u.nom,
+    u.prenom,
+    u.actif,
+    u.date_creation,
+    COALESCE(array_agg(r.nom) FILTER (WHERE r.nom IS NOT NULL), ARRAY[]::VARCHAR[]) AS roles
+FROM utilisateurs u
+LEFT JOIN utilisateur_roles ur ON u.id = ur.utilisateur_id
+LEFT JOIN roles r ON ur.role_id = r.id
+WHERE u.id = 1
+GROUP BY u.id, u.email, u.nom, u.prenom, u.actif, u.date_creation;
+
+-- TASK 8
+
+SELECT DISTINCT
+    u.id AS utilisateur_id,
+    u.email,
+    p.nom AS permission,
+    p.ressource,
+    p.action
+FROM utilisateurs u
+INNER JOIN utilisateur_roles ur ON u.id = ur.utilisateur_id
+INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+INNER JOIN permissions p ON rp.permission_id = p.id
+WHERE u.id = 1
+ORDER BY p.ressource, p.action;
+
+-- TASK 9
+
+SELECT
+    r.nom AS role,
+    COUNT(DISTINCT ur.utilisateur_id) AS nombre_utilisateurs
+FROM roles r
+LEFT JOIN utilisateur_roles ur ON r.id = ur.role_id
+GROUP BY r.id, r.nom
+ORDER BY nombre_utilisateurs DESC;
+
+-- TASK 10
+
+SELECT
+    u.id,
+    u.email,
+    array_agg(r.nom) AS roles
+FROM utilisateurs u
+INNER JOIN utilisateur_roles ur ON u.id = ur.utilisateur_id
+INNER JOIN roles r ON ur.role_id = r.id
+WHERE r.nom IN ('admin', 'moderator')
+GROUP BY u.id, u.email
+HAVING COUNT(DISTINCT r.nom) = 2;
+
+-- TASK 11
+
+SELECT
+    DATE(date_heure) AS jour,
+    COUNT(*) AS tentatives_echouees
+FROM logs_connexion
+WHERE succes = FALSE
+  AND date_heure >= CURRENT_DATE - INTERVAL '7 days'
+GROUP BY DATE(date_heure)
+ORDER BY jour DESC;
